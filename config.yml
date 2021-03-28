@@ -1,0 +1,26 @@
+# buy
+purchase_price: 895_000
+land_value: 50_000
+
+# develop
+building_sf: 8_800
+rentable_sf: 6_525
+improvement_cost_per_sf: 62
+
+# finance
+debt_share: 0.75
+interest_rate: 0.0425
+term: 5
+amortization_period: 25
+
+# operate
+number_of_units: 27
+monthly_school_rent: 650
+monthly_summer_rent: 100 * 30
+school_year_duration: 9
+school_year_occupancy_rate: 0.95
+summer_occupancy_rate: 0.666
+annual_growth: 0.03
+real_estate_tax_rate: 0.12
+income_tax_rate: 0.3960
+sell_price: 1_869_849.654981

@@ -1,0 +1,118 @@
+---
+title: "Sensitivity Analysis"
+author: "Bryan Clark"
+date: "4/1/2021"
+output: 
+  html_document:
+    theme: cosmo
+    highlight: tango
+    toc: true
+    toc_float: true
+---
+
+# Goal
+
+Determine which variables the financial model is most sensitive to as it relates to the deal IRR, investor IRR, and sponsor IRR.
+
+# Methodology
+
+One variable at a time, perform a Monte Carlo simulation by adding 5% relative noise. We can then rank/index the variables based on how wide the 95% confidence interval is to determine the most risky assumptions.
+
+# Analysis
+
+## Setup
+
+### R
+
+```{r setup, include=TRUE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(googlesheets4)
+library(reticulate)
+library(tidyverse)
+
+use_condaenv("deal-analyzer", required = T)
+```
+
+### Python
+
+```{python}
+import numpy as np
+# also here: https://github.com/bclark86/deal-analyzer
+from deal_analyzer import generate_deal_specs, DealAnalyzer
+
+deal_specs = generate_deal_specs()
+analyzer = DealAnalyzer(**deal_specs)
+```
+
+## Baseline
+
+### Deal Specs
+
+```{r}
+py$deal_specs
+```
+### Financials
+
+```{r}
+py$analyzer$investor_waterfall
+```
+
+## Monte Carlo Simulation 
+
+```{python}
+ignore_cols = [
+    'building_sf',
+    'term',
+    'amortization_period',
+    'number_of_units',
+    'years_held',
+    'income_tax_rate'
+]
+sensitivity_cols = [col for col in deal_specs.keys() if col not in ignore_cols]
+
+np.random.seed(90)
+sensitivty_results_df = analyzer.run_sensitivity_analysis(sensitivity_cols, deal_specs)
+```
+
+## Summarize Results
+
+```{r}
+sensitvity_summary_tbl = py$sensitivty_results_df %>%
+    group_by(variable) %>%
+    summarize(
+        trials = n(),
+        lower_95 = quantile(value, 0.025), 
+        upper_95 = quantile(value, 0.975),
+        deal_irr_lower95 = quantile(deal_irr, 0.025),
+        deal_irr_upper95 = quantile(deal_irr, 0.975),
+        sponsor_irr_lower95 = quantile(sponsor_irr, 0.025),
+        sponsor_irr_upper95 = quantile(sponsor_irr, 0.975),
+        investor_irr_lower95 = quantile(investor_irr, 0.025),
+        investor_irr_upper95 = quantile(investor_irr, 0.975)
+    ) %>%
+    mutate(
+        deal_irr_ci = deal_irr_upper95 - deal_irr_lower95,
+        sponsor_irr_ci = sponsor_irr_upper95 - sponsor_irr_lower95,
+        investor_irr_ci = investor_irr_upper95 - investor_irr_lower95
+    ) %>%
+    mutate(
+        deal_risk_index = (scales::rescale(deal_irr_ci, c(0, 1)) * 100) %>% round(0),
+        sponsor_risk_index = (scales::rescale(sponsor_irr_ci, c(0, 1)) * 100) %>% round(0),
+        investor_risk_index = (scales::rescale(investor_irr_ci, c(0, 1)) * 100) %>% round(0)
+    ) %>%
+    select(variable, contains("index"), everything())
+```
+
+## Export Data
+
+```{r}
+gs4_auth("bc2967@stern.nyu.edu")
+
+sensitvity_summary_tbl %>%
+    sheet_write(
+        ss = "1Lsd9-ojldDB3CyjpoV3RdErBhBfEVZ7ifmYh7NCtKeU",
+        sheet = "Sensitivity Analysis - Part 1"
+    )
+```
+

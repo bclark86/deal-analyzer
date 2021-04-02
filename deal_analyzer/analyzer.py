@@ -4,36 +4,37 @@ import numpy_financial as npf
 
 
 class DealAnalyzer:
-    def __init__(self,
-                 purchase_price,
-                 land_value,
-                 depreciable_life,
-                 building_sf,
-                 rentable_sf,
-                 improvement_cost_per_sf,
-                 closing_costs,
-                 debt_share,
-                 interest_rate,
-                 term,
-                 amortization_period,
-                 number_of_units,
-                 monthly_school_rent,
-                 daily_summer_rent,
-                 school_year_occupancy_rate,
-                 summer_occupancy_rate,
-                 operating_expenses_per_unit,
-                 capital_reserves_per_unit,
-                 annual_growth,
-                 real_estate_tax_rate,
-                 income_tax_rate,
-                 sell_cap_rate,
-                 investor_contribution=0.9,
-                 investor_preferred_return=0.08,
-                 investor_profit_share=0.5,
-                 school_year_duration=9,
-                 summer_year_duration=3,
-                 year_held=5
-                 ):
+    def __init__(
+        self,
+        purchase_price,
+        land_value,
+        depreciable_life,
+        building_sf,
+        rentable_sf,
+        improvement_cost_per_sf,
+        closing_costs,
+        debt_share,
+        interest_rate,
+        term,
+        amortization_period,
+        number_of_units,
+        monthly_school_rent,
+        daily_summer_rent,
+        school_year_occupancy_rate,
+        summer_occupancy_rate,
+        operating_expenses_per_sf,
+        capital_reserves_per_unit,
+        annual_growth,
+        real_estate_tax_rate,
+        income_tax_rate,
+        sell_cap_rate,
+        years_held,
+        investor_contribution=0.9,
+        investor_preferred_return=0.08,
+        investor_profit_share=0.5,
+        school_year_duration=9,
+        summer_year_duration=3,
+    ):
         # ASSUMPTIONS
 
         # buy
@@ -68,7 +69,10 @@ class DealAnalyzer:
         self.school_year_occupancy_rate = school_year_occupancy_rate
         self.summer_occupancy_rate = summer_occupancy_rate
         self.summer_duration = summer_year_duration
-        self.operating_expenses_per_unit = operating_expenses_per_unit
+        self.operating_expenses_per_sf = operating_expenses_per_sf
+        self.operating_expenses_per_unit = (
+            self.building_sf * self.operating_expenses_per_sf / self.number_of_units
+        )
         self.capital_reserves_per_unit = capital_reserves_per_unit
         self.annual_growth = annual_growth
         self.real_estate_tax_rate = real_estate_tax_rate
@@ -76,7 +80,7 @@ class DealAnalyzer:
 
         # sell
         self.sell_price = None
-        self.years_held = year_held
+        self.years_held = years_held
         self.sell_cap_rate = sell_cap_rate
 
         # investors
@@ -118,102 +122,207 @@ class DealAnalyzer:
     def calculate_assumptions(self):
         self.depreciable_base = self.purchase_price - self.land_value
         self.development_cost = self.improvement_cost_per_sf * self.rentable_sf
-        self.total_cost = self.purchase_price \
-                          + self.development_cost \
-                          + self.closing_costs
+        self.total_cost = (
+            self.purchase_price + self.development_cost + self.closing_costs
+        )
         self.mortgage_amount = self.total_cost * self.debt_share
         self.equity_investment = self.total_cost - self.mortgage_amount
-        self.constant_loan_payments = -npf.pmt(
-            rate=self.interest_rate / 12,
-            nper=self.amortization_period * 12,
-            pv=self.mortgage_amount
-        ) * 12 / self.mortgage_amount
+        self.constant_loan_payments = (
+            -npf.pmt(
+                rate=self.interest_rate / 12,
+                nper=self.amortization_period * 12,
+                pv=self.mortgage_amount,
+            )
+            * 12
+            / self.mortgage_amount
+        )
 
     def calculate_first_year_setup(self):
-        self.school_year_rent = self.number_of_units \
-                                * self.monthly_school_rent \
-                                * self.school_year_duration
-        self.summer_year_rent = self.number_of_units \
-                                * self.monthly_summer_rent \
-                                * self.summer_duration
-        self.school_year_vacancy_cost = self.school_year_rent \
-                                        * (1 - self.school_year_occupancy_rate)
-        self.summer_vacancy_cost = self.summer_year_rent \
-                                   * (1 - self.summer_occupancy_rate)
+        self.school_year_rent = (
+            self.number_of_units * self.monthly_school_rent * self.school_year_duration
+        )
+        self.summer_year_rent = (
+            self.number_of_units * self.monthly_summer_rent * self.summer_duration
+        )
+        self.school_year_vacancy_cost = self.school_year_rent * (
+            1 - self.school_year_occupancy_rate
+        )
+        self.summer_vacancy_cost = self.summer_year_rent * (
+            1 - self.summer_occupancy_rate
+        )
         self.gross_rent_roll = self.school_year_rent + self.summer_year_rent
-        self.vacancy_rate = (self.school_year_vacancy_cost + self.summer_vacancy_cost) \
-                            / self.gross_rent_roll
-        self.net_rents = self.gross_rent_roll \
-                         - self.summer_vacancy_cost \
-                         - self.school_year_vacancy_cost
+        self.vacancy_rate = (
+            self.school_year_vacancy_cost + self.summer_vacancy_cost
+        ) / self.gross_rent_roll
+        self.net_rents = (
+            self.gross_rent_roll
+            - self.summer_vacancy_cost
+            - self.school_year_vacancy_cost
+        )
         self.real_estate_taxes = self.gross_rent_roll * self.real_estate_tax_rate
-        self.operating_expenses = self.operating_expenses_per_unit * self.number_of_units
+        self.operating_expenses = (
+            self.operating_expenses_per_unit * self.number_of_units
+        )
         self.capital_reserves = self.capital_reserves_per_unit * self.number_of_units
-        self.net_operating_income = self.net_rents \
-                                    - self.real_estate_taxes \
-                                    - self.operating_expenses \
-                                    - self.capital_reserves
+        self.net_operating_income = (
+            self.net_rents
+            - self.real_estate_taxes
+            - self.operating_expenses
+            - self.capital_reserves
+        )
         self.finance_payments = self.mortgage_amount * self.constant_loan_payments
-        self.cash_flow_after_financing = self.net_operating_income - self.finance_payments
+        self.cash_flow_after_financing = (
+            self.net_operating_income - self.finance_payments
+        )
 
     def calculate_investor_waterfall(self):
         net_operating_income_arr = np.repeat(self.net_operating_income, self.years_held)
         for i in range(1, net_operating_income_arr.size):
-            net_operating_income_arr[i] = net_operating_income_arr[i] * ((1 + self.annual_growth) ** i)
-        self.investor_waterfall['net_operating_income'] = net_operating_income_arr
-        self.sell_price = self.investor_waterfall['net_operating_income'][-1] / self.sell_cap_rate
-        self.investor_waterfall['cash_flow_after_financing'] = (
-                self.investor_waterfall['net_operating_income'] - self.finance_payments
+            net_operating_income_arr[i] = net_operating_income_arr[i] * (
+                (1 + self.annual_growth) ** i
+            )
+        self.investor_waterfall["net_operating_income"] = net_operating_income_arr
+        self.sell_price = (
+            self.investor_waterfall["net_operating_income"][-1] / self.sell_cap_rate
         )
-        self.depreciation_taken = ((self.depreciable_base / self.depreciable_life) * self.years_held)
-        self.net_book_value = self.purchase_price + (self.capital_reserves * self.years_held) \
-                              + self.development_cost - self.depreciation_taken
+        self.investor_waterfall["cash_flow_after_financing"] = (
+            self.investor_waterfall["net_operating_income"] - self.finance_payments
+        )
+        self.depreciation_taken = (
+            self.depreciable_base / self.depreciable_life
+        ) * self.years_held
+        self.net_book_value = (
+            self.purchase_price
+            + (self.capital_reserves * self.years_held)
+            + self.development_cost
+            - self.depreciation_taken
+        )
         self.gain_on_sale = self.sell_price - self.net_book_value
         taxes_at_25pct = self.depreciation_taken * 0.25
         remaining_gain = self.gain_on_sale - self.depreciation_taken
         taxes_at_20pct = remaining_gain * 0.20
         self.total_taxes = taxes_at_25pct + taxes_at_20pct
-        cumulative_principle = npf.ppmt(rate=self.interest_rate / 12,
-                                        per=np.arange(1, (self.years_held * 12) + 1),
-                                        nper=self.amortization_period * 12,
-                                        pv=self.mortgage_amount).sum() * -1
+        cumulative_principle = (
+            npf.ppmt(
+                rate=self.interest_rate / 12,
+                per=np.arange(1, (self.years_held * 12) + 1),
+                nper=self.amortization_period * 12,
+                pv=self.mortgage_amount,
+            ).sum()
+            * -1
+        )
         self.mortgage_balance = self.mortgage_amount - cumulative_principle
-        self.net_cash_from_sale = self.sell_price - self.mortgage_balance - self.total_taxes
+        self.net_cash_from_sale = (
+            self.sell_price - self.mortgage_balance - self.total_taxes
+        )
         sale_proceed_arr = np.zeros(self.years_held)
         sale_proceed_arr[-1] = self.net_cash_from_sale
-        net_cash_arr = self.investor_waterfall['cash_flow_after_financing'] + sale_proceed_arr
-        self.investor_waterfall['net_cash_flows'] = np.insert(net_cash_arr, 0, -self.equity_investment)
-        self.investor_waterfall['deal_irr'] = npf.irr(self.investor_waterfall['net_cash_flows'])
+        net_cash_arr = (
+            self.investor_waterfall["cash_flow_after_financing"] + sale_proceed_arr
+        )
+        self.investor_waterfall["net_cash_flows"] = np.insert(
+            net_cash_arr, 0, -self.equity_investment
+        )
+        self.investor_waterfall["deal_irr"] = npf.irr(
+            self.investor_waterfall["net_cash_flows"]
+        )
 
         # base
-        distributions = self.investor_waterfall['net_cash_flows'][1:]
+        distributions = self.investor_waterfall["net_cash_flows"][1:]
 
         # investor
-        self.investor_waterfall['investor'] = dict()
-        self.investor_waterfall['investor']['contribution'] = self.investor_contribution * self.equity_investment
-        self.investor_waterfall['investor']['preferred_return'] = self.investor_waterfall['investor']['contribution'] \
-                                                                  * self.investor_preferred_return
-        investor_preferred_return_arr = np.repeat(self.investor_waterfall['investor']['preferred_return'],
-                                                  self.years_held)
+        self.investor_waterfall["investor"] = dict()
+        self.investor_waterfall["investor"]["contribution"] = (
+            self.investor_contribution * self.equity_investment
+        )
+        self.investor_waterfall["investor"]["preferred_return"] = (
+            self.investor_waterfall["investor"]["contribution"]
+            * self.investor_preferred_return
+        )
+        investor_preferred_return_arr = np.repeat(
+            self.investor_waterfall["investor"]["preferred_return"], self.years_held
+        )
         investor_return_of_investment_arr = np.zeros(self.years_held)
-        investor_return_of_investment_arr[-1] = self.investor_waterfall['investor']['contribution']
+        investor_return_of_investment_arr[-1] = self.investor_waterfall["investor"][
+            "contribution"
+        ]
         remaining_cash_flow_after_investor_pr = (
-                distributions - investor_preferred_return_arr - investor_return_of_investment_arr
+            distributions
+            - investor_preferred_return_arr
+            - investor_return_of_investment_arr
         )
-        investor_share_remaining_cash_flows = remaining_cash_flow_after_investor_pr * self.investor_profit_share
+        investor_share_remaining_cash_flows = (
+            remaining_cash_flow_after_investor_pr * self.investor_profit_share
+        )
         investor_cash_flows = (
-                investor_preferred_return_arr + investor_share_remaining_cash_flows + investor_return_of_investment_arr
+            investor_preferred_return_arr
+            + investor_share_remaining_cash_flows
+            + investor_return_of_investment_arr
         )
-        self.investor_waterfall['investor']['cash_flows'] = np.insert(
-            investor_cash_flows, 0, -self.investor_waterfall['investor']['contribution']
+        self.investor_waterfall["investor"]["cash_flows"] = np.insert(
+            investor_cash_flows, 0, -self.investor_waterfall["investor"]["contribution"]
         )
-        self.investor_waterfall['investor']['irr'] = npf.irr(self.investor_waterfall['investor']['cash_flows'])
+        self.investor_waterfall["investor"]["irr"] = npf.irr(
+            self.investor_waterfall["investor"]["cash_flows"]
+        )
 
         # sponsor
-        self.investor_waterfall['sponsor'] = dict()
-        self.investor_waterfall['sponsor']['contribution'] = self.equity_investment \
-            - self.investor_waterfall['investor']['contribution']
-        self.investor_waterfall['sponsor']['cash_flows'] = (
-                self.investor_waterfall['net_cash_flows'] - self.investor_waterfall['investor']['cash_flows']
+        self.investor_waterfall["sponsor"] = dict()
+        self.investor_waterfall["sponsor"]["contribution"] = (
+            self.equity_investment - self.investor_waterfall["investor"]["contribution"]
         )
-        self.investor_waterfall['sponsor']['irr'] = npf.irr(self.investor_waterfall['sponsor']['cash_flows'])
+        self.investor_waterfall["sponsor"]["cash_flows"] = (
+            self.investor_waterfall["net_cash_flows"]
+            - self.investor_waterfall["investor"]["cash_flows"]
+        )
+        self.investor_waterfall["sponsor"]["irr"] = npf.irr(
+            self.investor_waterfall["sponsor"]["cash_flows"]
+        )
+
+    @staticmethod
+    def run_sensitivity_analysis(search_cols, deal_specs, noise_pct=0.05):
+        def sensitivity_analysis_experiment(col, deal_specs, k=10_000, noise_pct=0.05):
+            return pd.DataFrame(
+                [
+                    sensitivity_analysis_trial(col, deal_specs, noise_pct=noise_pct)
+                    for _ in range(k)
+                ]
+            )
+
+        def sensitivity_analysis_trial(col, deal_specs, noise_pct=0.05):
+            deal_specs_rv = deal_specs.copy()
+            value = deal_specs_rv[col]
+            noise = value * noise_pct
+            deal_specs_rv[col] = np.random.triangular(
+                left=value - noise, mode=value, right=value + noise
+            )
+            analyzer_rv = DealAnalyzer(**deal_specs_rv)
+            return {
+                "variable": col,
+                "value": deal_specs_rv[col],
+                "deal_irr": analyzer_rv.investor_waterfall["deal_irr"],
+                "investor_irr": analyzer_rv.investor_waterfall["investor"]["irr"],
+                "investor_cash_in": analyzer_rv.investor_waterfall["investor"][
+                    "contribution"
+                ],
+                "investor_cash_out": analyzer_rv.investor_waterfall["investor"][
+                    "cash_flows"
+                ].sum(),
+                "sponsor_irr": analyzer_rv.investor_waterfall["sponsor"]["irr"],
+                "sponsor_cash_in": analyzer_rv.investor_waterfall["sponsor"][
+                    "contribution"
+                ],
+                "sponsor_cash_out": analyzer_rv.investor_waterfall["sponsor"][
+                    "cash_flows"
+                ].sum(),
+            }
+
+        return pd.concat(
+            [
+                sensitivity_analysis_experiment(
+                    col, deal_specs, k=10_000, noise_pct=noise_pct
+                )
+                for col in search_cols
+            ],
+            ignore_index=True,
+        )

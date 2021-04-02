@@ -24,14 +24,17 @@ One variable at a time, perform a Monte Carlo simulation by adding 5% relative n
 
 ### R
 
-```{r setup, include=TRUE, message=FALSE}
+```{r setup, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+reticulate::use_condaenv("deal-analyzer", required = T)
+```
 
+```{r, message=FALSE}
 library(googlesheets4)
 library(reticulate)
 library(tidyverse)
-
-use_condaenv("deal-analyzer", required = T)
+# for exporting data
+config = config::get(file = "secrets.yml")
 ```
 
 ### Python
@@ -107,11 +110,11 @@ sensitvity_summary_tbl = py$sensitivty_results_df %>%
 ## Export Data
 
 ```{r}
-gs4_auth("bc2967@stern.nyu.edu")
+gs4_auth(config$stern_email)
 
 sensitvity_summary_tbl %>%
     sheet_write(
-        ss = "1Lsd9-ojldDB3CyjpoV3RdErBhBfEVZ7ifmYh7NCtKeU",
+        ss = config$sheet_id,
         sheet = "Sensitivity Analysis - Part 1"
     )
 ```

@@ -42,7 +42,11 @@ config = config::get(file = "secrets.yml")
 ```{python}
 import numpy as np
 # also here: https://github.com/bclark86/deal-analyzer
-from deal_analyzer import generate_deal_specs, DealAnalyzer
+from deal_analyzer import (
+  generate_deal_specs, 
+  DealAnalyzer,
+  run_sensitivity_analysis
+)
 
 deal_specs = generate_deal_specs()
 analyzer = DealAnalyzer(**deal_specs)
@@ -75,7 +79,7 @@ ignore_cols = [
 sensitivity_cols = [col for col in deal_specs.keys() if col not in ignore_cols]
 
 np.random.seed(90)
-sensitivty_results_df = analyzer.run_sensitivity_analysis(sensitivity_cols, deal_specs)
+sensitivty_results_df = run_sensitivity_analysis(sensitivity_cols, deal_specs)
 ```
 
 ## Summarize Results

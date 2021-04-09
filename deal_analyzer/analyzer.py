@@ -242,15 +242,47 @@ class DealAnalyzer:
         investor_preferred_return_arr = np.repeat(
             self.investor_waterfall["investor"]["preferred_return"], self.years_held
         )
+        investor_preferred_return_arr = np.minimum(
+            investor_preferred_return_arr,
+            self.investor_waterfall["cash_flow_after_financing"]
+        )
+        cash_flow_after_investor_pr = (
+                self.investor_waterfall["cash_flow_after_financing"] - investor_preferred_return_arr
+        )
+        # sponsor
+        self.investor_waterfall["sponsor"] = dict()
+        self.investor_waterfall["sponsor"]["contribution"] = (
+                self.sponsor_contribution * self.equity_investment
+        )
+        self.investor_waterfall["sponsor"]["preferred_return"] = (
+                self.investor_waterfall["sponsor"]["contribution"]
+                * self.investor_preferred_return
+        )
+        sponsor_preferred_return_arr = np.repeat(
+            self.investor_waterfall["sponsor"]["preferred_return"], self.years_held
+        )
+        sponsor_preferred_return_arr = np.minimum(
+            sponsor_preferred_return_arr,
+            cash_flow_after_investor_pr
+        )
+        # investor
         investor_return_of_investment_arr = np.zeros(self.years_held)
         investor_return_of_investment_arr[-1] = self.investor_waterfall["investor"][
+            "contribution"
+        ]
+        # sponsor
+        sponsor_return_of_investment_arr = np.zeros(self.years_held)
+        sponsor_return_of_investment_arr[-1] = self.investor_waterfall["sponsor"][
             "contribution"
         ]
         remaining_cash_flow_after_investor_pr = (
             distributions
             - investor_preferred_return_arr
+            - sponsor_preferred_return_arr
             - investor_return_of_investment_arr
+            - sponsor_return_of_investment_arr
         )
+        # investor
         investor_share_remaining_cash_flows = (
             remaining_cash_flow_after_investor_pr * self.investor_profit_share
         )
@@ -265,64 +297,19 @@ class DealAnalyzer:
         self.investor_waterfall["investor"]["irr"] = npf.irr(
             self.investor_waterfall["investor"]["cash_flows"]
         )
-
         # sponsor
-        self.investor_waterfall["sponsor"] = dict()
-        self.investor_waterfall["sponsor"]["contribution"] = (
-            self.equity_investment - self.investor_waterfall["investor"]["contribution"]
+        sponsor_share_remaining_cash_flows = (
+                remaining_cash_flow_after_investor_pr * self.sponsor_profit_share
         )
-        self.investor_waterfall["sponsor"]["cash_flows"] = (
-            self.investor_waterfall["net_cash_flows"]
-            - self.investor_waterfall["investor"]["cash_flows"]
+        sponsor_cash_flows = (
+                sponsor_preferred_return_arr
+                + sponsor_share_remaining_cash_flows
+                + sponsor_return_of_investment_arr
+        )
+        self.investor_waterfall["sponsor"]["cash_flows"] = np.insert(
+            sponsor_cash_flows, 0, -self.investor_waterfall["sponsor"]["contribution"]
         )
         self.investor_waterfall["sponsor"]["irr"] = npf.irr(
             self.investor_waterfall["sponsor"]["cash_flows"]
         )
 
-    @staticmethod
-    def run_sensitivity_analysis(search_cols, deal_specs, noise_pct=0.05):
-        def sensitivity_analysis_experiment(col, deal_specs, k=10_000, noise_pct=0.05):
-            return pd.DataFrame(
-                [
-                    sensitivity_analysis_trial(col, deal_specs, noise_pct=noise_pct)
-                    for _ in range(k)
-                ]
-            )
-
-        def sensitivity_analysis_trial(col, deal_specs, noise_pct=0.05):
-            deal_specs_rv = deal_specs.copy()
-            value = deal_specs_rv[col]
-            noise = value * noise_pct
-            deal_specs_rv[col] = np.random.triangular(
-                left=value - noise, mode=value, right=value + noise
-            )
-            analyzer_rv = DealAnalyzer(**deal_specs_rv)
-            return {
-                "variable": col,
-                "value": deal_specs_rv[col],
-                "deal_irr": analyzer_rv.investor_waterfall["deal_irr"],
-                "investor_irr": analyzer_rv.investor_waterfall["investor"]["irr"],
-                "investor_cash_in": analyzer_rv.investor_waterfall["investor"][
-                    "contribution"
-                ],
-                "investor_cash_out": analyzer_rv.investor_waterfall["investor"][
-                    "cash_flows"
-                ].sum(),
-                "sponsor_irr": analyzer_rv.investor_waterfall["sponsor"]["irr"],
-                "sponsor_cash_in": analyzer_rv.investor_waterfall["sponsor"][
-                    "contribution"
-                ],
-                "sponsor_cash_out": analyzer_rv.investor_waterfall["sponsor"][
-                    "cash_flows"
-                ].sum(),
-            }
-
-        return pd.concat(
-            [
-                sensitivity_analysis_experiment(
-                    col, deal_specs, k=10_000, noise_pct=noise_pct
-                )
-                for col in search_cols
-            ],
-            ignore_index=True,
-        )

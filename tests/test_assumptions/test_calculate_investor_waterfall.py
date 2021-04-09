@@ -38,14 +38,14 @@ def test_deal_irr(analyzer):
 
 
 def test_investor_cash_flows(analyzer):
-    true_investor_cash_flows = [-303_648.75, 42_144.19, 44_031.13, 45_974.67, 47_976.52,  441_025.55]
+    true_investor_cash_flows = [-303_648.75, 40_794.64, 42_681.58, 44_625.12, 46_626.97,  422_806.63]
     investor_cash_flows = analyzer.investor_waterfall['investor']['cash_flows']
     assert investor_cash_flows == pytest.approx(true_investor_cash_flows, abs=1)
 
 
 def test_investor_irr(analyzer):
-    assert analyzer.investor_waterfall['investor']['irr'] == pytest.approx(0.1889, abs=0.001)
+    assert analyzer.investor_waterfall['investor']['irr'] == pytest.approx(0.1776, abs=0.001)
 
 
 def test_sponsor_irr(analyzer):
-    assert analyzer.investor_waterfall['sponsor']['irr'] == pytest.approx(0.6778, abs=0.001)
+    assert analyzer.investor_waterfall['sponsor']['irr'] == pytest.approx(0.7323, abs=0.001)

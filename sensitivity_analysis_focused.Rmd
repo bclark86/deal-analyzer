@@ -1,0 +1,323 @@
+---
+title: "Sensitivity Analysis v2"
+author: "Bryan Clark"
+date: "2021-04-10"
+output: 
+  html_document:
+    theme: cosmo
+    highlight: tango
+    toc: true
+    toc_float: true
+---
+
+# Goal
+
+Quantify risk of deal in terms of:
+
+1. Investor IRR
+2. Covering Investor Preferred Return
+3. Cash Flow Positive
+
+# Methodology
+
+Perform a Monte Carlo simulation by sampling values for rent and occupancy rates as they are the most risky assumptions according to the [exploratory sensitivity analysis](https://htmlpreview.github.io/?https://github.com/bclark86/deal-analyzer/blob/main/sensitivity_analysis.html). 
+
+# Analysis
+
+## Setup
+
+### R
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 6,
+  fig.asp = 0.618, 
+  out.width = "70%", 
+  fig.align = "center"
+)
+reticulate::use_condaenv("deal-analyzer", required = T)
+```
+
+```{r, message=FALSE}
+library(tictoc)
+library(googlesheets4)
+library(reticulate)
+library(patchwork)
+library(tidyverse)
+# for exporting data
+secrets = config::get(file = "secrets.yml")
+theme_set(theme_bw(base_family = "Avenir"))
+```
+
+### Python
+
+```{python}
+import numpy as np
+import pandas as pd
+# also here: https://github.com/bclark86/deal-analyzer
+from deal_analyzer import (
+  generate_deal_specs, 
+  DealAnalyzer
+)
+
+deal_specs = generate_deal_specs()
+analyzer = DealAnalyzer(**deal_specs)
+```
+
+## Baseline
+
+### Deal Specs
+
+```{r}
+py$deal_specs
+```
+
+### Financials
+
+```{r}
+py$analyzer$investor_waterfall
+```
+
+## Monte Carlo Simulation 
+
+### Sampling Function
+
+```{python}
+def sensitivity_analysis_trial(opccupancy_rate_triangular=False):
+    # copy the deal specs
+    deal_specs_rv = deal_specs.copy()
+    # sample random values
+    # riskiest inputs are occupancy and rent
+    deal_specs_rv['school_year_occupancy_rate'] = (
+        np.where(
+            opccupancy_rate_triangular,
+            np.random.triangular(left=0.86, mode=0.95, right=0.97),
+            np.random.uniform(low=0.86, high=0.97)
+        ).item()
+    )
+    deal_specs_rv['summer_occupancy_rate'] = (
+        np.where(
+            opccupancy_rate_triangular,
+            np.random.triangular(left=0.40, mode=0.50, right=0.55),
+            np.random.uniform(low=0.40, high=0.55)
+        ).item()
+    )
+    deal_specs_rv['monthly_school_rent'] = (
+        np.random.triangular(left=625, mode=650, right=700)
+    )
+    deal_specs_rv['daily_summer_rent'] = (
+        np.random.triangular(left=85, mode=100, right=115)
+    )
+    # run analyzer
+    analyzer_rv = DealAnalyzer(**deal_specs_rv)
+    investor_waterfall = analyzer_rv.investor_waterfall
+    cfaf_yr1 = investor_waterfall["cash_flow_after_financing"][0]
+    investor_preferred_return = investor_waterfall['investor']['preferred_return']
+    sponsor_preferred_return = investor_waterfall['sponsor']['preferred_return']
+    return {
+        # sampled values
+        "school_year_occupancy_rate": deal_specs_rv['school_year_occupancy_rate'],
+        "summer_occupancy_rate": deal_specs_rv['summer_occupancy_rate'],
+        "monthly_school_rent": deal_specs_rv['monthly_school_rent'],
+        "daily_summer_rent": deal_specs_rv['daily_summer_rent'],
+        # does the deal go into the negative?
+        "cfaf_yr1": cfaf_yr1,
+        "cash_flow_positive": cfaf_yr1 > 0,
+        # can the preferred return be made?
+        "investor_preferred_return_covered": cfaf_yr1 > investor_preferred_return,
+        "sponsor_preferred_return_covered": cfaf_yr1 > (
+            investor_preferred_return + sponsor_preferred_return
+        ),
+        # investment outcomes
+        "deal_irr": investor_waterfall["deal_irr"],
+        "investor_irr": investor_waterfall["investor"]["irr"],
+        "investor_cash_in": investor_waterfall["investor"]["contribution"],
+        "investor_cash_out": investor_waterfall["investor"]["cash_flows"].sum(),
+        "sponsor_irr": investor_waterfall["sponsor"]["irr"],
+        "sponsor_cash_in": investor_waterfall["sponsor"]["contribution"],
+        "sponsor_cash_out": investor_waterfall["sponsor"]["cash_flows"].sum(),
+    }
+    
+
+def run_simulation(n=100_000, triangular=False):
+    np.random.seed(90)
+    return pd.DataFrame([
+        sensitivity_analysis_trial(triangular) for _ in range(n)
+    ])
+
+```
+
+### Run Simulation
+
+```{r}
+tic()
+results_tbl = tibble(occupancy_distribution = c("triangular", "uniform")) %>%
+  mutate(
+    function_logical = ifelse(occupancy_distribution == 'triangular', T, F)
+  ) %>%
+  mutate(
+    simulation_data = map(function_logical, .f = ~ {
+        py$run_simulation(triangular = .x) %>%
+          as_tibble()
+      })
+  ) %>%
+  select(-function_logical)
+toc()
+```
+
+
+### Summarize Results
+
+```{r}
+summarize_simulation = function(data) {
+  data %>%
+    as_tibble() %>%
+    mutate(
+      investor_irr_outcome = case_when(
+        investor_irr < 0.10 ~ "less than 10%",
+        investor_irr >= 0.10 & investor_irr < 0.15 ~ "10% to 15%",
+        investor_irr >= 0.15 & investor_irr < 0.20 ~ "15% to 20%",
+        investor_irr >= 0.20 ~ "20% or more"
+      ) %>% factor(levels = c("less than 10%", "10% to 15%", "15% to 20%", "20% or more"))
+    ) %>%
+    group_by(investor_irr_outcome) %>%
+    summarize(
+      n = n(),
+      investor_preferred_return_pct = mean(investor_preferred_return_covered),
+      cash_flow_positiv_pct = mean(cash_flow_positive),
+      sponsor_irr = median(sponsor_irr)
+    ) %>%
+    mutate(pct = n / sum(n)) %>%
+    relocate(pct, .after = n)
+}
+
+results_tbl$summary = map(results_tbl$simulation_data, summarize_simulation)
+```
+
+```{r}
+# confidence interval
+# probability of preferred return
+# bucket summary
+investor_irr_ci_tbl = results_tbl %>%
+  select(occupancy_distribution, simulation_data) %>%
+  unnest(simulation_data) %>%
+  group_by(occupancy_distribution) %>%
+  summarize(
+    investor_irr_05 = quantile(investor_irr, probs = 0.05),
+    investor_irr_50 = median(investor_irr),
+    investor_irr_95 = quantile(investor_irr, probs = 0.95),
+    investor_preferred_return_pct = mean(investor_preferred_return_covered)
+  )
+```
+
+
+### Plot Results
+
+```{r}
+plot_input_distributions = function(distribution) {
+  
+  sub_results_tbl = results_tbl %>%
+    filter(occupancy_distribution == distribution) %>%
+    pluck('simulation_data', 1)
+  
+  school_year_occupancy_rate = sub_results_tbl %>%
+    ggplot(aes(school_year_occupancy_rate)) +
+    geom_histogram(binwidth = 0.001) +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(
+      title = "School Year Occupancy Rate",
+      x = "",
+      y = ""
+    ) + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )
+  
+  summer_occupancy_rate = sub_results_tbl %>%
+    ggplot(aes(summer_occupancy_rate)) +
+    geom_histogram(binwidth = 0.001) +
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(
+      title = "Summer Occupancy Rate",
+      x = "",
+      y = ""
+    ) + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )
+  
+  monthly_school_rent = sub_results_tbl %>%
+    ggplot(aes(monthly_school_rent)) +
+    geom_histogram(binwidth = 0.5) +
+    scale_x_continuous(labels = scales::dollar_format(accuracy = 1)) +
+    labs(
+      title = "Monthly School Rent",
+      x = "",
+      y = ""
+    ) + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )
+  
+  daily_summer_rent = sub_results_tbl %>%
+    ggplot(aes(daily_summer_rent)) +
+    geom_histogram(binwidth = 0.5) +
+    scale_x_continuous(labels = scales::dollar_format(accuracy = 1)) +
+    labs(
+      title = "Daily Summer Rent",
+      x = "",
+      y = ""
+    ) + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )
+  
+  plots = list(
+    school_year_occupancy_rate, summer_occupancy_rate, 
+    monthly_school_rent, daily_summer_rent
+  )
+  
+  p = wrap_plots(plots) +
+    plot_annotation(title = "Sampling Distributions")
+  
+  p %>% 
+    ggsave(
+      filename = str_glue("plots/sampling_distribution_{distribution}.png"),
+      width = 8, height = 7
+    )
+  
+  return(p)
+}
+
+plot_input_distributions('triangular')
+plot_input_distributions('uniform')
+```
+
+
+## Export Data
+
+```{r}
+gs4_auth(secrets$stern_email)
+
+investor_irr_ci_tbl %>%
+  sheet_write(
+        ss = secrets$sheet_id,
+        sheet = "Sensitivity Analysis - Part 2 (Investor IIR CI)"
+    )
+
+results_tbl %>%
+  select(occupancy_distribution, summary) %>%
+  unnest(summary) %>%
+    sheet_write(
+        ss = secrets$sheet_id,
+        sheet = "Sensitivity Analysis - Part 2 (Investor IIR Buckets)"
+    )
+```
+

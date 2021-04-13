@@ -101,8 +101,8 @@ def sensitivity_analysis_trial(opccupancy_rate_triangular=False):
     deal_specs_rv['summer_occupancy_rate'] = (
         np.where(
             opccupancy_rate_triangular,
-            np.random.triangular(left=0.40, mode=0.50, right=0.55),
-            np.random.uniform(low=0.40, high=0.55)
+            np.random.triangular(left=0.30, mode=0.40, right=0.50),
+            np.random.uniform(low=0.30, high=0.5)
         ).item()
     )
     deal_specs_rv['monthly_school_rent'] = (
@@ -191,7 +191,8 @@ summarize_simulation = function(data) {
       sponsor_irr = median(sponsor_irr)
     ) %>%
     mutate(pct = n / sum(n)) %>%
-    relocate(pct, .after = n)
+    relocate(pct, .after = n) %>%
+    select(-n, everything())
 }
 
 results_tbl$summary = map(results_tbl$simulation_data, summarize_simulation)
@@ -299,6 +300,81 @@ plot_input_distributions = function(distribution) {
 plot_input_distributions('triangular')
 plot_input_distributions('uniform')
 ```
+
+```{r}
+# uniform only for now
+simulation_data = results_tbl %>%
+  filter(occupancy_distribution == "uniform") %>%
+  pluck("simulation_data", 1)
+
+ivesntor_summary_tbl = results_tbl %>%
+  filter(occupancy_distribution == "uniform") %>%
+  pluck("summary", 1)
+
+investor_irr_ci = investor_irr_ci_tbl %>%
+  filter(occupancy_distribution == "uniform")
+
+investor_irr_dist = simulation_data %>%
+  mutate(suboptimal = ifelse(investor_irr < 0.10, "yes", "no")) %>%
+  ggplot(aes(investor_irr, fill = suboptimal)) +
+  geom_histogram(binwidth = 0.001) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("#999999", "#D55E00")) +
+  geom_vline(xintercept = investor_irr_ci$investor_irr_05, linetype = "dashed") + 
+  geom_vline(xintercept = investor_irr_ci$investor_irr_95, linetype = "dashed") +
+  labs(
+      title = "Investor IRR Distribution",
+      subtitle = str_glue(
+        "90% confidence estimate: {round(investor_irr_ci$investor_irr_05*100, 1)}% to ",
+        "{round(investor_irr_ci$investor_irr_95*100, 1)}%"
+      ),
+      x = "Investor IRR",
+      y = "",
+      caption = "Source: Simulation Results"
+    ) + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    ) +
+    guides(
+      fill = FALSE
+    )
+
+suboptimal_pct = simulation_data %>% 
+  summarize(suboptimal_pct = mean(investor_irr < 0.10)) %>%
+  pull(suboptimal_pct)
+
+investor_summary_chart = ivesntor_summary_tbl %>%
+  mutate(suboptimal = ifelse(investor_irr_outcome == "less than 10%", "yes", "no")) %>%
+  mutate(pct_label = pct %>% scales::percent(accuracy = 1)) %>%
+  ggplot(aes(pct, investor_irr_outcome, fill = suboptimal, label = pct_label)) +
+  geom_col() + 
+  geom_label() +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("#999999", "#D55E00")) +
+  labs(
+      title = "Investor IRR Outcomes",
+      subtitle = str_glue(
+        "{suboptimal_pct %>% scales::percent(accuracy = 1)} chance of an ",
+        "investor IRR of less than 10%"
+      ),
+      x = "% of Simulation Trials",
+      y = ""
+    ) + 
+    guides(
+      fill = FALSE
+    )
+
+plots = list(investor_summary_chart, investor_irr_dist)
+p = wrap_plots(plots)
+  
+  p %>% 
+    ggsave(
+      filename = str_glue("plots/investor_outcomes.png"),
+      width = 10, height = 5
+    )
+```
+
 
 
 ## Export Data

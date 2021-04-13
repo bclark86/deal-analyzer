@@ -25,7 +25,7 @@ class DealAnalyzer:
         operating_expenses_per_sf,
         capital_reserves_per_unit,
         annual_growth,
-        real_estate_tax_rate,
+        annual_real_estate_taxes,
         income_tax_rate,
         sell_cap_rate,
         years_held,
@@ -75,7 +75,7 @@ class DealAnalyzer:
         )
         self.capital_reserves_per_unit = capital_reserves_per_unit
         self.annual_growth = annual_growth
-        self.real_estate_tax_rate = real_estate_tax_rate
+        self.annual_real_estate_taxes = annual_real_estate_taxes
         self.income_tax_rate = income_tax_rate
 
         # sell
@@ -159,14 +159,13 @@ class DealAnalyzer:
             - self.summer_vacancy_cost
             - self.school_year_vacancy_cost
         )
-        self.real_estate_taxes = self.gross_rent_roll * self.real_estate_tax_rate
         self.operating_expenses = (
             self.operating_expenses_per_unit * self.number_of_units
         )
         self.capital_reserves = self.capital_reserves_per_unit * self.number_of_units
         self.net_operating_income = (
             self.net_rents
-            - self.real_estate_taxes
+            - self.annual_real_estate_taxes
             - self.operating_expenses
             - self.capital_reserves
         )
